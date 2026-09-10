@@ -4,7 +4,6 @@ import json
 import os
 import subprocess
 import urllib.parse
-from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 
 BASE = "https://open.feishu.cn/open-apis"
@@ -61,20 +60,25 @@ def column_name(index):
     return "".join(reversed(out))
 
 
+def number_styles(sheet_id, matrix):
+    integer_ranges, decimal_ranges = [], []
+    for row_index, row in enumerate(matrix, start=2):
+        for column_index, value in enumerate(row, start=2):
+            column = column_name(column_index)
+            cell_range = f"{sheet_id}!{column}{row_index}:{column}{row_index}"
+            (decimal_ranges if abs(float(value)) < 10 else integer_ranges).append(cell_range)
+    return [
+        {"ranges": integer_ranges, "style": {"formatter": "0", "thousandSeparator": True}},
+        {"ranges": decimal_ranges, "style": {"formatter": ""}},
+    ]
+
+
 def display_matrix(matrix):
-    result = []
-    for row in matrix:
-        formatted = []
-        for value in row:
-            number = Decimal(str(value))
-            if abs(number) < 10:
-                rounded = number.quantize(Decimal("0.1"), rounding=ROUND_HALF_UP)
-                formatted.append(f"{rounded:,.1f}")
-            else:
-                rounded = number.quantize(Decimal("1"), rounding=ROUND_HALF_UP)
-                formatted.append(f"{rounded:,.0f}")
-        result.append(formatted)
-    return result
+    """Round only single-digit values to one decimal, preserving numeric types."""
+    return [
+        [round(float(value), 1) if abs(float(value)) < 10 else value for value in row]
+        for row in matrix
+    ]
 
 
 def tenant_token():
@@ -111,21 +115,25 @@ def main():
     sheet_id = os.environ.get("FEISHU_SHEET_ID", DEFAULT_SHEET_ID)
     spreadsheet = spreadsheet_token(token, wiki_token)
     target_range = f"{sheet_id}!B2:AF19"
-    displayed = display_matrix(matrix)
+    written_matrix = display_matrix(matrix)
     written = request("PUT", f"{BASE}/sheets/v2/spreadsheets/{spreadsheet}/values", token, {
-        "valueRange": {"range": target_range, "values": displayed}
+        "valueRange": {"range": target_range, "values": written_matrix}
     })
+    styles = number_styles(sheet_id, matrix)
+    request("PUT", f"{BASE}/sheets/v2/spreadsheets/{spreadsheet}/styles_batch_update", token, {"data": styles})
     verified = request(
         "GET",
         f"{BASE}/sheets/v2/spreadsheets/{spreadsheet}/values/{urllib.parse.quote(target_range, safe='!')}",
         token,
     )["data"]["valueRange"].get("values", [])
-    if verified != displayed:
+    if verified != written_matrix or not all(isinstance(value, (int, float)) for row in verified for value in row):
         raise RuntimeError("Read-back verification did not match the written matrix")
     print(json.dumps({
         "range": target_range, "rows": 18, "columns": 31, "cells": 558,
         "revision": written.get("data", {}).get("revision"),
-        "display_examples": {"thousands": displayed[0][0], "one_decimal": displayed[0][-1]},
+        "all_numeric": True,
+        "integer_cells": len(styles[0]["ranges"]),
+        "decimal_cells": len(styles[1]["ranges"]),
     }, ensure_ascii=False))
 
 
