@@ -45,6 +45,15 @@ def style_groups(sheet_id, rows, row_offset=2, col_offset=2):
     return styles
 
 
+def percentage_style(sheet_id, rows, row_offset=2, col_offset=2):
+    ranges = []
+    for r, row in enumerate(rows, row_offset):
+        for c, value in enumerate(row, col_offset):
+            if isinstance(value, (int, float)):
+                ranges.append(f"{sheet_id}!{col_name(c)}{r}:{col_name(c)}{r}")
+    return [{"ranges": ranges, "style": {"formatter": "0.00%"}}]
+
+
 def write_and_verify(token, spreadsheet, sheet_id, start, matrix):
     start_col, start_row = start
     end_col = start_col + max(len(row) for row in matrix) - 1
@@ -108,13 +117,14 @@ def main():
     spreadsheet = spreadsheet_token(token, os.environ.get("FEISHU_WIKI_TOKEN", DEFAULT_WIKI_TOKEN))
 
     ttm_rows = [[rounded(v) for v in row] for row in data["ttm"] if row is not None]
-    yoy_rows = [[rounded(v) for v in row] for row in data["yoy"] if row is not None]
+    # 审计数据以百分数记录（如 71.74）；飞书百分比单元格底层应写 0.7174。
+    yoy_rows = [[None if v is None else float(v) / 100 for v in row] for row in data["yoy"] if row is not None]
     ttm_range = write_and_verify(token, spreadsheet, SHEET_TTM, (2, 2), ttm_rows)
     yoy_range = write_and_verify(token, spreadsheet, SHEET_YOY, (2, 2), yoy_rows)
     request("PUT", f"{BASE}/sheets/v2/spreadsheets/{spreadsheet}/styles_batch_update", token,
             {"data": style_groups(SHEET_TTM, data["ttm"][:len(ttm_rows)])})
     request("PUT", f"{BASE}/sheets/v2/spreadsheets/{spreadsheet}/styles_batch_update", token,
-            {"data": style_groups(SHEET_YOY, data["yoy"][:len(yoy_rows)])})
+            {"data": percentage_style(SHEET_YOY, yoy_rows)})
 
     summary_sheet, created = find_or_add_summary(token, spreadsheet)
     header_range = copy_summary_headers(token, spreadsheet, summary_sheet)
