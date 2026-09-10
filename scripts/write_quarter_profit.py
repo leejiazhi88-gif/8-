@@ -4,6 +4,7 @@ import json
 import os
 import subprocess
 import urllib.parse
+from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 
 BASE = "https://open.feishu.cn/open-apis"
@@ -52,6 +53,30 @@ def validate_data(data):
     return matrix
 
 
+def column_name(index):
+    out = []
+    while index:
+        index, rem = divmod(index - 1, 26)
+        out.append(chr(ord("A") + rem))
+    return "".join(reversed(out))
+
+
+def display_matrix(matrix):
+    result = []
+    for row in matrix:
+        formatted = []
+        for value in row:
+            number = Decimal(str(value))
+            if abs(number) < 10:
+                rounded = number.quantize(Decimal("0.1"), rounding=ROUND_HALF_UP)
+                formatted.append(f"{rounded:,.1f}")
+            else:
+                rounded = number.quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+                formatted.append(f"{rounded:,.0f}")
+        result.append(formatted)
+    return result
+
+
 def tenant_token():
     app_id = os.environ.get("FEISHU_APP_ID")
     app_secret = os.environ.get("FEISHU_APP_SECRET")
@@ -86,22 +111,23 @@ def main():
     sheet_id = os.environ.get("FEISHU_SHEET_ID", DEFAULT_SHEET_ID)
     spreadsheet = spreadsheet_token(token, wiki_token)
     target_range = f"{sheet_id}!B2:AF19"
+    displayed = display_matrix(matrix)
     written = request("PUT", f"{BASE}/sheets/v2/spreadsheets/{spreadsheet}/values", token, {
-        "valueRange": {"range": target_range, "values": matrix}
+        "valueRange": {"range": target_range, "values": displayed}
     })
     verified = request(
         "GET",
         f"{BASE}/sheets/v2/spreadsheets/{spreadsheet}/values/{urllib.parse.quote(target_range, safe='!')}",
         token,
     )["data"]["valueRange"].get("values", [])
-    if verified != matrix:
+    if verified != displayed:
         raise RuntimeError("Read-back verification did not match the written matrix")
     print(json.dumps({
         "range": target_range, "rows": 18, "columns": 31, "cells": 558,
         "revision": written.get("data", {}).get("revision"),
+        "display_examples": {"thousands": displayed[0][0], "one_decimal": displayed[0][-1]},
     }, ensure_ascii=False))
 
 
 if __name__ == "__main__":
     main()
-

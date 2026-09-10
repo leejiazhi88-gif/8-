@@ -20,6 +20,8 @@ python3 scripts/write_quarter_profit.py
 
 默认写入 Wiki `PkYRwLa92il1oEkLI0kcE8zknEc` 的首个工作表 `676109`，范围为 `B2:AF19`。也可通过环境变量覆盖 Wiki token 和 Sheet ID。写入后脚本会回读全部 558 个单元格并逐项核对。
 
+脚本写入统一的展示格式：绝对值达到 10 的数值显示为整数，绝对值小于 10 的数值保留 1 位小数，所有数值均使用千位分隔符。原始数值及精度保留在 `data/quarter_profit.json`。
+
 ## 数据口径
 
 - 数据源：Tushare 利润表
@@ -28,4 +30,3 @@ python3 scripts/write_quarter_profit.py
 - 单季值：Q1 直接取累计值；Q2/Q3/Q4 使用本期累计值减上期累计值
 - 重复报表：优先采用 `update_flag=1` 的最新记录
 - 单位：亿元，保留两位小数
-
