@@ -54,6 +54,12 @@ def percentage_style(sheet_id, rows, row_offset=2, col_offset=2):
     return [{"ranges": ranges, "style": {"formatter": "0.00%"}}]
 
 
+def summary_percentage_styles(sheet_id, row_count):
+    columns = ["G", "K", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "W", "Y", "Z"]
+    return [{"ranges": [f"{sheet_id}!{column}3:{column}{row_count + 2}" for column in columns],
+             "style": {"formatter": "0.00%"}}]
+
+
 def write_and_verify(token, spreadsheet, sheet_id, start, matrix):
     start_col, start_row = start
     end_col = start_col + max(len(row) for row in matrix) - 1
@@ -101,11 +107,16 @@ def summary_matrix(rows):
         values = []
         for field in fields:
             value = row.get(field)
-            if field == "vol" and value is not None:
+            percentage_ratio_fields = {"over_800_ratio", "profit_yield", "roe"}
+            percentage_point_fields = {"ret_250", "ret_ytd", "ret_5", "ret_10", "ret_20", "ret_60", "ret_120",
+                                       "daily_ret", "turnover", "week_ret", "month_ret"}
+            if field in percentage_point_fields and value is not None:
+                value /= 100  # 百分数 -> 飞书百分比单元格底层比例
+            elif field == "vol" and value is not None:
                 value *= 10000  # Tushare 申万日线：万股 -> 股
             elif field == "amount" and value is not None:
                 value *= 1000  # Tushare 申万日线：千元 -> 元
-            values.append(rounded(value))
+            values.append(value if field in percentage_ratio_fields | percentage_point_fields else rounded(value))
         result.append(values)
     return result
 
@@ -136,6 +147,8 @@ def main():
     }})
     request("PUT", f"{BASE}/sheets/v2/spreadsheets/{spreadsheet}/styles_batch_update", token,
             {"data": style_groups(summary_sheet, summary, row_offset=3, col_offset=1)})
+    request("PUT", f"{BASE}/sheets/v2/spreadsheets/{spreadsheet}/styles_batch_update", token,
+            {"data": summary_percentage_styles(summary_sheet, len(summary))})
 
     numeric = sum(isinstance(v, (int, float)) for matrix in (ttm_rows, yoy_rows, summary) for row in matrix for v in row)
     print(json.dumps({"ttm": ttm_range, "yoy": yoy_range, "summary_sheet": summary_sheet,
